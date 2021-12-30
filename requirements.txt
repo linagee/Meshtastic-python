@@ -16,3 +16,5 @@ pytest
 pytest-cov
 pyyaml
 pytap2
+pdoc3
+pypubsub

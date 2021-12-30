@@ -28,21 +28,25 @@
 <span>Expand source code</span>
 </summary>
 <pre><code class="python">&#34;&#34;&#34;Meshtastic unit tests for __main__.py&#34;&#34;&#34;
+# pylint: disable=C0302
 
 import sys
 import os
 import re
+import logging
 
 from unittest.mock import patch, MagicMock
 import pytest
 
-from meshtastic.__main__ import initParser, main, Globals, onReceive, onConnection
+from meshtastic.__main__ import initParser, main, Globals, onReceive, onConnection, export_config, getPref, setPref
+#from ..radioconfig_pb2 import UserPreferences
 import meshtastic.radioconfig_pb2
 from ..serial_interface import SerialInterface
 from ..tcp_interface import TCPInterface
 from ..ble_interface import BLEInterface
 from ..node import Node
 from ..channel_pb2 import Channel
+from ..remote_hardware import onGPIOreceive
 
 
 @pytest.mark.unit
@@ -432,7 +436,7 @@ def test_main_sendtext(capsys, reset_globals):
     Globals.getInstance().set_args(sys.argv)
 
     iface = MagicMock(autospec=SerialInterface)
-    def mock_sendText(text, dest, wantAck):
+    def mock_sendText(text, dest, wantAck, channelIndex):
         print(&#39;inside mocked sendText&#39;)
     iface.sendText.side_effect = mock_sendText
 
@@ -447,13 +451,74 @@ def test_main_sendtext(capsys, reset_globals):
 
 
 @pytest.mark.unit
+def test_main_sendtext_with_channel(capsys, reset_globals):
+    &#34;&#34;&#34;Test --sendtext&#34;&#34;&#34;
+    sys.argv = [&#39;&#39;, &#39;--sendtext&#39;, &#39;hello&#39;, &#39;--ch-index&#39;, &#39;1&#39;]
+    Globals.getInstance().set_args(sys.argv)
+
+    iface = MagicMock(autospec=SerialInterface)
+    def mock_sendText(text, dest, wantAck, channelIndex):
+        print(&#39;inside mocked sendText&#39;)
+    iface.sendText.side_effect = mock_sendText
+
+    with patch(&#39;meshtastic.serial_interface.SerialInterface&#39;, return_value=iface) as mo:
+        main()
+        out, err = capsys.readouterr()
+        assert re.search(r&#39;Connected to radio&#39;, out, re.MULTILINE)
+        assert re.search(r&#39;Sending text message&#39;, out, re.MULTILINE)
+        assert re.search(r&#39;on channelIndex:1&#39;, out, re.MULTILINE)
+        assert re.search(r&#39;inside mocked sendText&#39;, out, re.MULTILINE)
+        assert err == &#39;&#39;
+        mo.assert_called()
+
+
+@pytest.mark.unit
+def test_main_sendtext_with_invalid_channel(capsys, reset_globals):
+    &#34;&#34;&#34;Test --sendtext&#34;&#34;&#34;
+    sys.argv = [&#39;&#39;, &#39;--sendtext&#39;, &#39;hello&#39;, &#39;--ch-index&#39;, &#39;-1&#39;]
+    Globals.getInstance().set_args(sys.argv)
+
+    iface = MagicMock(autospec=SerialInterface)
+    iface.getChannelByChannelIndex.return_value = None
+    with patch(&#39;meshtastic.serial_interface.SerialInterface&#39;, return_value=iface) as mo:
+        iface.getNode.return_value.getChannelByChannelIndex.return_value = None
+        with pytest.raises(SystemExit) as pytest_wrapped_e:
+            main()
+        assert pytest_wrapped_e.type == SystemExit
+        assert pytest_wrapped_e.value.code == 1
+        out, err = capsys.readouterr()
+        assert re.search(r&#39;is not a valid channel&#39;, out, re.MULTILINE)
+        assert err == &#39;&#39;
+        mo.assert_called()
+
+
+@pytest.mark.unit
+def test_main_sendtext_with_invalid_channel_nine(capsys, reset_globals):
+    &#34;&#34;&#34;Test --sendtext&#34;&#34;&#34;
+    sys.argv = [&#39;&#39;, &#39;--sendtext&#39;, &#39;hello&#39;, &#39;--ch-index&#39;, &#39;9&#39;]
+    Globals.getInstance().set_args(sys.argv)
+
+    iface = MagicMock(autospec=SerialInterface)
+    with patch(&#39;meshtastic.serial_interface.SerialInterface&#39;, return_value=iface) as mo:
+        iface.getNode.return_value.getChannelByChannelIndex.return_value = None
+        with pytest.raises(SystemExit) as pytest_wrapped_e:
+            main()
+        assert pytest_wrapped_e.type == SystemExit
+        assert pytest_wrapped_e.value.code == 1
+        out, err = capsys.readouterr()
+        assert re.search(r&#39;is not a valid channel&#39;, out, re.MULTILINE)
+        assert err == &#39;&#39;
+        mo.assert_called()
+
+
+@pytest.mark.unit
 def test_main_sendtext_with_dest(capsys, reset_globals):
     &#34;&#34;&#34;Test --sendtext with --dest&#34;&#34;&#34;
     sys.argv = [&#39;&#39;, &#39;--sendtext&#39;, &#39;hello&#39;, &#39;--dest&#39;, &#39;foo&#39;]
     Globals.getInstance().set_args(sys.argv)
 
     iface = MagicMock(autospec=SerialInterface)
-    def mock_sendText(text, dest, wantAck):
+    def mock_sendText(text, dest, wantAck, channelIndex):
         print(&#39;inside mocked sendText&#39;)
     iface.sendText.side_effect = mock_sendText
 
@@ -1199,14 +1264,113 @@ def test_main_setchan(capsys, reset_globals):
 
 
 @pytest.mark.unit
-def test_main_onReceive_empty(reset_globals):
+def test_main_onReceive_empty(caplog, reset_globals):
     &#34;&#34;&#34;Test onReceive&#34;&#34;&#34;
     sys.argv = [&#39;&#39;]
     Globals.getInstance().set_args(sys.argv)
     iface = MagicMock(autospec=SerialInterface)
     packet = {&#39;decoded&#39;: &#39;foo&#39;}
-    onReceive(packet, iface)
-    # TODO: how do we know we actually called it?
+    with caplog.at_level(logging.DEBUG):
+        onReceive(packet, iface)
+    assert re.search(r&#39;in onReceive&#39;, caplog.text, re.MULTILINE)
+
+
+#    TODO: use this captured position app message (might want/need in the future)
+#    packet = {
+#            &#39;to&#39;: 4294967295,
+#            &#39;decoded&#39;: {
+#                &#39;portnum&#39;: &#39;POSITION_APP&#39;,
+#                &#39;payload&#39;: &#34;M69\306a&#34;
+#                },
+#            &#39;id&#39;: 334776976,
+#            &#39;hop_limit&#39;: 3
+#            }
+
+@pytest.mark.unit
+def test_main_onReceive_with_sendtext(caplog, reset_globals):
+    &#34;&#34;&#34;Test onReceive with sendtext
+       The entire point of this test is to make sure the interface.close() call
+       is made in onReceive().
+    &#34;&#34;&#34;
+    sys.argv = [&#39;&#39;, &#39;--sendtext&#39;, &#39;hello&#39;]
+    Globals.getInstance().set_args(sys.argv)
+
+    # Note: &#39;TEXT_MESSAGE_APP&#39; value is 1
+    packet = {
+            &#39;to&#39;: 4294967295,
+            &#39;decoded&#39;: {
+                &#39;portnum&#39;: 1,
+                &#39;payload&#39;: &#34;hello&#34;
+                },
+            &#39;id&#39;: 334776977,
+            &#39;hop_limit&#39;: 3,
+            &#39;want_ack&#39;: True
+            }
+
+    iface = MagicMock(autospec=SerialInterface)
+    iface.myInfo.my_node_num = 4294967295
+
+    with patch(&#39;meshtastic.serial_interface.SerialInterface&#39;, return_value=iface) as mo:
+        with caplog.at_level(logging.DEBUG):
+            main()
+            onReceive(packet, iface)
+        assert re.search(r&#39;in onReceive&#39;, caplog.text, re.MULTILINE)
+        mo.assert_called()
+
+
+@pytest.mark.unit
+def test_main_onReceive_with_reply(caplog, capsys, reset_globals):
+    &#34;&#34;&#34;Test onReceive with a reply
+       To capture: on one device run &#39;--sendtext aaa --reply&#39; and on another
+       device run &#39;--sendtext bbb --reply&#39;, then back to the first device and
+       run &#39;--sendtext aaa2 --reply&#39;. You should now see a &#34;Sending reply&#34; message.
+    &#34;&#34;&#34;
+    sys.argv = [&#39;&#39;, &#39;--sendtext&#39;, &#39;hello&#39;, &#39;--reply&#39;]
+    Globals.getInstance().set_args(sys.argv)
+
+    # Note: &#39;TEXT_MESSAGE_APP&#39; value is 1
+
+    send_packet = {
+            &#39;to&#39;: 4294967295,
+            &#39;decoded&#39;: {
+                &#39;portnum&#39;: 1,
+                &#39;payload&#39;: &#34;hello&#34;
+                },
+            &#39;id&#39;: 334776977,
+            &#39;hop_limit&#39;: 3,
+            &#39;want_ack&#39;: True
+            }
+
+    reply_packet = {
+            &#39;from&#39;: 682968668,
+            &#39;to&#39;: 4294967295,
+            &#39;decoded&#39;: {
+                &#39;portnum&#39;: &#39;TEXT_MESSAGE_APP&#39;,
+                &#39;payload&#39;: b&#39;bbb&#39;,
+                &#39;text&#39;: &#39;bbb&#39;
+                },
+            &#39;id&#39;: 1709936182,
+            &#39;rxTime&#39;: 1640381999,
+            &#39;rxSnr&#39;: 6.0,
+            &#39;hopLimit&#39;: 3,
+            &#39;raw&#39;: &#39;faked&#39;,
+            &#39;fromId&#39;: &#39;!28b5465c&#39;,
+            &#39;toId&#39;: &#39;^all&#39;
+            }
+
+    iface = MagicMock(autospec=SerialInterface)
+    iface.myInfo.my_node_num = 4294967295
+
+    with patch(&#39;meshtastic.serial_interface.SerialInterface&#39;, return_value=iface) as mo:
+        with caplog.at_level(logging.DEBUG):
+            main()
+            onReceive(send_packet, iface)
+            onReceive(reply_packet, iface)
+        assert re.search(r&#39;in onReceive&#39;, caplog.text, re.MULTILINE)
+        out, err = capsys.readouterr()
+        assert re.search(r&#39;got msg &#39;, out, re.MULTILINE)
+        assert err == &#39;&#39;
+        mo.assert_called()
 
 
 @pytest.mark.unit
@@ -1224,6 +1388,250 @@ def test_main_onConnection(reset_globals, capsys):
     onConnection(iface, mytopic)
     out, err = capsys.readouterr()
     assert re.search(r&#39;Connection changed: foo&#39;, out, re.MULTILINE)
+    assert err == &#39;&#39;
+
+
+@pytest.mark.unit
+def test_main_export_config(reset_globals, capsys):
+    &#34;&#34;&#34;Test export_config() function directly&#34;&#34;&#34;
+    iface = MagicMock(autospec=SerialInterface)
+    with patch(&#39;meshtastic.serial_interface.SerialInterface&#39;, return_value=iface) as mo:
+        mo.getLongName.return_value = &#39;foo&#39;
+        mo.localNode.getURL.return_value = &#39;bar&#39;
+        mo.getMyNodeInfo().get.return_value = { &#39;latitudeI&#39;: 1100000000, &#39;longitudeI&#39;: 1200000000,
+                                                &#39;altitude&#39;: 100, &#39;batteryLevel&#39;: 34, &#39;latitude&#39;: 110.0,
+                                                &#39;longitude&#39;: 120.0}
+        mo.localNode.radioConfig.preferences = &#34;&#34;&#34;phone_timeout_secs: 900
+ls_secs: 300
+position_broadcast_smart: true
+fixed_position: true
+position_flags: 35&#34;&#34;&#34;
+        export_config(mo)
+    out, err = capsys.readouterr()
+    assert re.search(r&#39;owner: foo&#39;, out, re.MULTILINE)
+    assert re.search(r&#39;channel_url: bar&#39;, out, re.MULTILINE)
+    assert re.search(r&#39;location:&#39;, out, re.MULTILINE)
+    assert re.search(r&#39;lat: 110.0&#39;, out, re.MULTILINE)
+    assert re.search(r&#39;lon: 120.0&#39;, out, re.MULTILINE)
+    assert re.search(r&#39;alt: 100&#39;, out, re.MULTILINE)
+    assert re.search(r&#39;user_prefs:&#39;, out, re.MULTILINE)
+    assert re.search(r&#39;phone_timeout_secs: 900&#39;, out, re.MULTILINE)
+    assert re.search(r&#39;ls_secs: 300&#39;, out, re.MULTILINE)
+    assert re.search(r&#34;position_broadcast_smart: &#39;true&#39;&#34;, out, re.MULTILINE)
+    assert re.search(r&#34;fixed_position: &#39;true&#39;&#34;, out, re.MULTILINE)
+    assert re.search(r&#34;position_flags: 35&#34;, out, re.MULTILINE)
+    assert err == &#39;&#39;
+
+
+@pytest.mark.unit
+def test_main_export_config_called_from_main(capsys, reset_globals):
+    &#34;&#34;&#34;Test --export-config&#34;&#34;&#34;
+    sys.argv = [&#39;&#39;, &#39;--export-config&#39;]
+    Globals.getInstance().set_args(sys.argv)
+
+    iface = MagicMock(autospec=SerialInterface)
+    with patch(&#39;meshtastic.serial_interface.SerialInterface&#39;, return_value=iface) as mo:
+        main()
+        out, err = capsys.readouterr()
+        assert re.search(r&#39;Connected to radio&#39;, out, re.MULTILINE)
+        assert re.search(r&#39;# start of Meshtastic configure yaml&#39;, out, re.MULTILINE)
+        assert err == &#39;&#39;
+        mo.assert_called()
+
+
+@pytest.mark.unit
+def test_main_gpio_rd_no_gpio_channel(capsys, reset_globals):
+    &#34;&#34;&#34;Test --gpio_rd with no named gpio channel&#34;&#34;&#34;
+    sys.argv = [&#39;&#39;, &#39;--gpio-rd&#39;, &#39;0x10&#39;]
+    Globals.getInstance().set_args(sys.argv)
+
+    iface = MagicMock(autospec=SerialInterface)
+    iface.localNode.getChannelByName.return_value = None
+    with patch(&#39;meshtastic.serial_interface.SerialInterface&#39;, return_value=iface):
+        with pytest.raises(SystemExit) as pytest_wrapped_e:
+            main()
+        assert pytest_wrapped_e.type == SystemExit
+        assert pytest_wrapped_e.value.code == 1
+        out, err = capsys.readouterr()
+        assert re.search(r&#39;Warning: No channel named&#39;, out)
+        assert err == &#39;&#39;
+
+
+@pytest.mark.unit
+def test_main_gpio_rd_no_dest(capsys, reset_globals):
+    &#34;&#34;&#34;Test --gpio_rd with a named gpio channel but no dest was specified&#34;&#34;&#34;
+    sys.argv = [&#39;&#39;, &#39;--gpio-rd&#39;, &#39;0x2000&#39;]
+    Globals.getInstance().set_args(sys.argv)
+
+    channel = Channel(index=1, role=1)
+    channel.settings.modem_config = 3
+    channel.settings.psk = b&#39;\x01&#39;
+
+    iface = MagicMock(autospec=SerialInterface)
+    iface.localNode.getChannelByName.return_value = channel
+    with patch(&#39;meshtastic.serial_interface.SerialInterface&#39;, return_value=iface):
+        with pytest.raises(SystemExit) as pytest_wrapped_e:
+            main()
+        assert pytest_wrapped_e.type == SystemExit
+        assert pytest_wrapped_e.value.code == 1
+        out, err = capsys.readouterr()
+        assert re.search(r&#39;Warning: Must use a destination node ID&#39;, out)
+        assert err == &#39;&#39;
+
+
+@pytest.mark.unit
+def test_main_gpio_rd(caplog, capsys, reset_globals):
+    &#34;&#34;&#34;Test --gpio_rd with a named gpio channel&#34;&#34;&#34;
+    # Note: On the Heltec v2.1, there is a GPIO pin GPIO 13 that does not have a
+    # red arrow (meaning ok to use for our purposes)
+    # See https://resource.heltec.cn/download/WiFi_LoRa_32/WIFI_LoRa_32_V2.pdf
+    # To find out the mask for GPIO 13, let us assign n as 13.
+    # 1. Subtract 1 from n (n is now 12)
+    # 2. Find the 2^n or 2^12 (4096)
+    # 3. Convert 4096 decimal to hex (0x1000)
+    # You can use python:
+    # &gt;&gt;&gt; print(hex(2**12))
+    # 0x1000
+    sys.argv = [&#39;&#39;, &#39;--gpio-rd&#39;, &#39;0x1000&#39;, &#39;--dest&#39;, &#39;!1234&#39;]
+    Globals.getInstance().set_args(sys.argv)
+
+    channel = Channel(index=1, role=1)
+    channel.settings.modem_config = 3
+    channel.settings.psk = b&#39;\x01&#39;
+
+    packet = {
+
+            &#39;from&#39;: 682968668,
+            &#39;to&#39;: 682968612,
+            &#39;channel&#39;: 1,
+            &#39;decoded&#39;: {
+                &#39;portnum&#39;: &#39;REMOTE_HARDWARE_APP&#39;,
+                &#39;payload&#39;: b&#39;\x08\x05\x18\x80 &#39;,
+                &#39;requestId&#39;: 1629980484,
+                &#39;remotehw&#39;: {
+                    &#39;typ&#39;: &#39;READ_GPIOS_REPLY&#39;,
+                    &#39;gpioValue&#39;: &#39;4096&#39;,
+                    &#39;raw&#39;: &#39;faked&#39;,
+                    &#39;id&#39;: 1693085229,
+                    &#39;rxTime&#39;: 1640294262,
+                    &#39;rxSnr&#39;: 4.75,
+                    &#39;hopLimit&#39;: 3,
+                    &#39;wantAck&#39;: True,
+                    }
+                }
+            }
+
+
+    iface = MagicMock(autospec=SerialInterface)
+    iface.localNode.getChannelByName.return_value = channel
+    with patch(&#39;meshtastic.serial_interface.SerialInterface&#39;, return_value=iface) as mo:
+        with caplog.at_level(logging.DEBUG):
+            main()
+            onGPIOreceive(packet, mo)
+    assert re.search(r&#39;readGPIOs nodeid:!1234 mask:4096&#39;, caplog.text, re.MULTILINE)
+    out, err = capsys.readouterr()
+    assert re.search(r&#39;Connected to radio&#39;, out, re.MULTILINE)
+    assert re.search(r&#39;Reading GPIO mask 0x1000 &#39;, out, re.MULTILINE)
+    assert re.search(r&#39;Received RemoteHardware typ=READ_GPIOS_REPLY, gpio_value=4096&#39;, out, re.MULTILINE)
+    assert err == &#39;&#39;
+
+
+@pytest.mark.unit
+def test_main_getPref_valid_field(capsys, reset_globals):
+    &#34;&#34;&#34;Test getPref() with a valid field&#34;&#34;&#34;
+    prefs = MagicMock()
+    prefs.DESCRIPTOR.fields_by_name.get.return_value = &#39;ls_secs&#39;
+    prefs.wifi_ssid = &#39;foo&#39;
+    prefs.ls_secs = 300
+    prefs.fixed_position = False
+
+    getPref(prefs, &#39;ls_secs&#39;)
+    out, err = capsys.readouterr()
+    assert re.search(r&#39;ls_secs: 300&#39;, out, re.MULTILINE)
+    assert err == &#39;&#39;
+
+
+@pytest.mark.unit
+def test_main_getPref_invalid_field(capsys, reset_globals):
+    &#34;&#34;&#34;Test getPref() with an invalid field&#34;&#34;&#34;
+
+    class Field:
+        &#34;&#34;&#34;Simple class for testing.&#34;&#34;&#34;
+
+        def __init__(self, name):
+            &#34;&#34;&#34;constructor&#34;&#34;&#34;
+            self.name = name
+
+    prefs = MagicMock()
+    prefs.DESCRIPTOR.fields_by_name.get.return_value = None
+
+    # Note: This is a subset of the real fields
+    ls_secs_field = Field(&#39;ls_secs&#39;)
+    is_router = Field(&#39;is_router&#39;)
+    fixed_position = Field(&#39;fixed_position&#39;)
+
+    fields = [ ls_secs_field, is_router, fixed_position ]
+    prefs.DESCRIPTOR.fields = fields
+
+    getPref(prefs, &#39;foo&#39;)
+
+    out, err = capsys.readouterr()
+    assert re.search(r&#39;does not have an attribute called foo&#39;, out, re.MULTILINE)
+    # ensure they are sorted
+    assert re.search(r&#39;fixed_position\s+is_router\s+ls_secs&#39;, out, re.MULTILINE)
+    assert err == &#39;&#39;
+
+
+@pytest.mark.unit
+def test_main_setPref_valid_field(capsys, reset_globals):
+    &#34;&#34;&#34;Test setPref() with a valid field&#34;&#34;&#34;
+
+    class Field:
+        &#34;&#34;&#34;Simple class for testing.&#34;&#34;&#34;
+
+        def __init__(self, name, enum_type):
+            &#34;&#34;&#34;constructor&#34;&#34;&#34;
+            self.name = name
+            self.enum_type = enum_type
+
+    ls_secs_field = Field(&#39;ls_secs&#39;, &#39;int&#39;)
+    prefs = MagicMock()
+    prefs.DESCRIPTOR.fields_by_name.get.return_value = ls_secs_field
+
+    setPref(prefs, &#39;ls_secs&#39;, &#39;300&#39;)
+    out, err = capsys.readouterr()
+    assert re.search(r&#39;Set ls_secs to 300&#39;, out, re.MULTILINE)
+    assert err == &#39;&#39;
+
+
+@pytest.mark.unit
+def test_main_setPref_invalid_field(capsys, reset_globals):
+    &#34;&#34;&#34;Test setPref() with a invalid field&#34;&#34;&#34;
+
+
+    class Field:
+        &#34;&#34;&#34;Simple class for testing.&#34;&#34;&#34;
+
+        def __init__(self, name):
+            &#34;&#34;&#34;constructor&#34;&#34;&#34;
+            self.name = name
+
+    prefs = MagicMock()
+    prefs.DESCRIPTOR.fields_by_name.get.return_value = None
+
+    # Note: This is a subset of the real fields
+    ls_secs_field = Field(&#39;ls_secs&#39;)
+    is_router = Field(&#39;is_router&#39;)
+    fixed_position = Field(&#39;fixed_position&#39;)
+
+    fields = [ ls_secs_field, is_router, fixed_position ]
+    prefs.DESCRIPTOR.fields = fields
+
+    setPref(prefs, &#39;foo&#39;, &#39;300&#39;)
+    out, err = capsys.readouterr()
+    assert re.search(r&#39;does not have an attribute called foo&#39;, out, re.MULTILINE)
+    # ensure they are sorted
+    assert re.search(r&#39;fixed_position\s+is_router\s+ls_secs&#39;, out, re.MULTILINE)
     assert err == &#39;&#39;</code></pre>
 </details>
 </section>
@@ -1724,6 +2132,136 @@ def test_main_configure(capsys, reset_globals):
         mo.assert_called()</code></pre>
 </details>
 </dd>
+<dt id="meshtastic.tests.test_main.test_main_export_config"><code class="name flex">
+<span>def <span class="ident">test_main_export_config</span></span>(<span>reset_globals, capsys)</span>
+</code></dt>
+<dd>
+<div class="desc"><p>Test export_config() function directly</p></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">@pytest.mark.unit
+def test_main_export_config(reset_globals, capsys):
+    &#34;&#34;&#34;Test export_config() function directly&#34;&#34;&#34;
+    iface = MagicMock(autospec=SerialInterface)
+    with patch(&#39;meshtastic.serial_interface.SerialInterface&#39;, return_value=iface) as mo:
+        mo.getLongName.return_value = &#39;foo&#39;
+        mo.localNode.getURL.return_value = &#39;bar&#39;
+        mo.getMyNodeInfo().get.return_value = { &#39;latitudeI&#39;: 1100000000, &#39;longitudeI&#39;: 1200000000,
+                                                &#39;altitude&#39;: 100, &#39;batteryLevel&#39;: 34, &#39;latitude&#39;: 110.0,
+                                                &#39;longitude&#39;: 120.0}
+        mo.localNode.radioConfig.preferences = &#34;&#34;&#34;phone_timeout_secs: 900
+ls_secs: 300
+position_broadcast_smart: true
+fixed_position: true
+position_flags: 35&#34;&#34;&#34;
+        export_config(mo)
+    out, err = capsys.readouterr()
+    assert re.search(r&#39;owner: foo&#39;, out, re.MULTILINE)
+    assert re.search(r&#39;channel_url: bar&#39;, out, re.MULTILINE)
+    assert re.search(r&#39;location:&#39;, out, re.MULTILINE)
+    assert re.search(r&#39;lat: 110.0&#39;, out, re.MULTILINE)
+    assert re.search(r&#39;lon: 120.0&#39;, out, re.MULTILINE)
+    assert re.search(r&#39;alt: 100&#39;, out, re.MULTILINE)
+    assert re.search(r&#39;user_prefs:&#39;, out, re.MULTILINE)
+    assert re.search(r&#39;phone_timeout_secs: 900&#39;, out, re.MULTILINE)
+    assert re.search(r&#39;ls_secs: 300&#39;, out, re.MULTILINE)
+    assert re.search(r&#34;position_broadcast_smart: &#39;true&#39;&#34;, out, re.MULTILINE)
+    assert re.search(r&#34;fixed_position: &#39;true&#39;&#34;, out, re.MULTILINE)
+    assert re.search(r&#34;position_flags: 35&#34;, out, re.MULTILINE)
+    assert err == &#39;&#39;</code></pre>
+</details>
+</dd>
+<dt id="meshtastic.tests.test_main.test_main_export_config_called_from_main"><code class="name flex">
+<span>def <span class="ident">test_main_export_config_called_from_main</span></span>(<span>capsys, reset_globals)</span>
+</code></dt>
+<dd>
+<div class="desc"><p>Test &ndash;export-config</p></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">@pytest.mark.unit
+def test_main_export_config_called_from_main(capsys, reset_globals):
+    &#34;&#34;&#34;Test --export-config&#34;&#34;&#34;
+    sys.argv = [&#39;&#39;, &#39;--export-config&#39;]
+    Globals.getInstance().set_args(sys.argv)
+
+    iface = MagicMock(autospec=SerialInterface)
+    with patch(&#39;meshtastic.serial_interface.SerialInterface&#39;, return_value=iface) as mo:
+        main()
+        out, err = capsys.readouterr()
+        assert re.search(r&#39;Connected to radio&#39;, out, re.MULTILINE)
+        assert re.search(r&#39;# start of Meshtastic configure yaml&#39;, out, re.MULTILINE)
+        assert err == &#39;&#39;
+        mo.assert_called()</code></pre>
+</details>
+</dd>
+<dt id="meshtastic.tests.test_main.test_main_getPref_invalid_field"><code class="name flex">
+<span>def <span class="ident">test_main_getPref_invalid_field</span></span>(<span>capsys, reset_globals)</span>
+</code></dt>
+<dd>
+<div class="desc"><p>Test getPref() with an invalid field</p></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">@pytest.mark.unit
+def test_main_getPref_invalid_field(capsys, reset_globals):
+    &#34;&#34;&#34;Test getPref() with an invalid field&#34;&#34;&#34;
+
+    class Field:
+        &#34;&#34;&#34;Simple class for testing.&#34;&#34;&#34;
+
+        def __init__(self, name):
+            &#34;&#34;&#34;constructor&#34;&#34;&#34;
+            self.name = name
+
+    prefs = MagicMock()
+    prefs.DESCRIPTOR.fields_by_name.get.return_value = None
+
+    # Note: This is a subset of the real fields
+    ls_secs_field = Field(&#39;ls_secs&#39;)
+    is_router = Field(&#39;is_router&#39;)
+    fixed_position = Field(&#39;fixed_position&#39;)
+
+    fields = [ ls_secs_field, is_router, fixed_position ]
+    prefs.DESCRIPTOR.fields = fields
+
+    getPref(prefs, &#39;foo&#39;)
+
+    out, err = capsys.readouterr()
+    assert re.search(r&#39;does not have an attribute called foo&#39;, out, re.MULTILINE)
+    # ensure they are sorted
+    assert re.search(r&#39;fixed_position\s+is_router\s+ls_secs&#39;, out, re.MULTILINE)
+    assert err == &#39;&#39;</code></pre>
+</details>
+</dd>
+<dt id="meshtastic.tests.test_main.test_main_getPref_valid_field"><code class="name flex">
+<span>def <span class="ident">test_main_getPref_valid_field</span></span>(<span>capsys, reset_globals)</span>
+</code></dt>
+<dd>
+<div class="desc"><p>Test getPref() with a valid field</p></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">@pytest.mark.unit
+def test_main_getPref_valid_field(capsys, reset_globals):
+    &#34;&#34;&#34;Test getPref() with a valid field&#34;&#34;&#34;
+    prefs = MagicMock()
+    prefs.DESCRIPTOR.fields_by_name.get.return_value = &#39;ls_secs&#39;
+    prefs.wifi_ssid = &#39;foo&#39;
+    prefs.ls_secs = 300
+    prefs.fixed_position = False
+
+    getPref(prefs, &#39;ls_secs&#39;)
+    out, err = capsys.readouterr()
+    assert re.search(r&#39;ls_secs: 300&#39;, out, re.MULTILINE)
+    assert err == &#39;&#39;</code></pre>
+</details>
+</dd>
 <dt id="meshtastic.tests.test_main.test_main_get_with_invalid"><code class="name flex">
 <span>def <span class="ident">test_main_get_with_invalid</span></span>(<span>capsys, reset_globals)</span>
 </code></dt>
@@ -1792,6 +2330,130 @@ def test_main_get_with_valid_values(capsys, reset_globals):
         assert re.search(r&#39;ls_secs: 300&#39;, out, re.MULTILINE)
         assert re.search(r&#39;wifi_ssid: foo&#39;, out, re.MULTILINE)
         assert re.search(r&#39;fixed_position: False&#39;, out, re.MULTILINE)
+        assert err == &#39;&#39;</code></pre>
+</details>
+</dd>
+<dt id="meshtastic.tests.test_main.test_main_gpio_rd"><code class="name flex">
+<span>def <span class="ident">test_main_gpio_rd</span></span>(<span>caplog, capsys, reset_globals)</span>
+</code></dt>
+<dd>
+<div class="desc"><p>Test &ndash;gpio_rd with a named gpio channel</p></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">@pytest.mark.unit
+def test_main_gpio_rd(caplog, capsys, reset_globals):
+    &#34;&#34;&#34;Test --gpio_rd with a named gpio channel&#34;&#34;&#34;
+    # Note: On the Heltec v2.1, there is a GPIO pin GPIO 13 that does not have a
+    # red arrow (meaning ok to use for our purposes)
+    # See https://resource.heltec.cn/download/WiFi_LoRa_32/WIFI_LoRa_32_V2.pdf
+    # To find out the mask for GPIO 13, let us assign n as 13.
+    # 1. Subtract 1 from n (n is now 12)
+    # 2. Find the 2^n or 2^12 (4096)
+    # 3. Convert 4096 decimal to hex (0x1000)
+    # You can use python:
+    # &gt;&gt;&gt; print(hex(2**12))
+    # 0x1000
+    sys.argv = [&#39;&#39;, &#39;--gpio-rd&#39;, &#39;0x1000&#39;, &#39;--dest&#39;, &#39;!1234&#39;]
+    Globals.getInstance().set_args(sys.argv)
+
+    channel = Channel(index=1, role=1)
+    channel.settings.modem_config = 3
+    channel.settings.psk = b&#39;\x01&#39;
+
+    packet = {
+
+            &#39;from&#39;: 682968668,
+            &#39;to&#39;: 682968612,
+            &#39;channel&#39;: 1,
+            &#39;decoded&#39;: {
+                &#39;portnum&#39;: &#39;REMOTE_HARDWARE_APP&#39;,
+                &#39;payload&#39;: b&#39;\x08\x05\x18\x80 &#39;,
+                &#39;requestId&#39;: 1629980484,
+                &#39;remotehw&#39;: {
+                    &#39;typ&#39;: &#39;READ_GPIOS_REPLY&#39;,
+                    &#39;gpioValue&#39;: &#39;4096&#39;,
+                    &#39;raw&#39;: &#39;faked&#39;,
+                    &#39;id&#39;: 1693085229,
+                    &#39;rxTime&#39;: 1640294262,
+                    &#39;rxSnr&#39;: 4.75,
+                    &#39;hopLimit&#39;: 3,
+                    &#39;wantAck&#39;: True,
+                    }
+                }
+            }
+
+
+    iface = MagicMock(autospec=SerialInterface)
+    iface.localNode.getChannelByName.return_value = channel
+    with patch(&#39;meshtastic.serial_interface.SerialInterface&#39;, return_value=iface) as mo:
+        with caplog.at_level(logging.DEBUG):
+            main()
+            onGPIOreceive(packet, mo)
+    assert re.search(r&#39;readGPIOs nodeid:!1234 mask:4096&#39;, caplog.text, re.MULTILINE)
+    out, err = capsys.readouterr()
+    assert re.search(r&#39;Connected to radio&#39;, out, re.MULTILINE)
+    assert re.search(r&#39;Reading GPIO mask 0x1000 &#39;, out, re.MULTILINE)
+    assert re.search(r&#39;Received RemoteHardware typ=READ_GPIOS_REPLY, gpio_value=4096&#39;, out, re.MULTILINE)
+    assert err == &#39;&#39;</code></pre>
+</details>
+</dd>
+<dt id="meshtastic.tests.test_main.test_main_gpio_rd_no_dest"><code class="name flex">
+<span>def <span class="ident">test_main_gpio_rd_no_dest</span></span>(<span>capsys, reset_globals)</span>
+</code></dt>
+<dd>
+<div class="desc"><p>Test &ndash;gpio_rd with a named gpio channel but no dest was specified</p></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">@pytest.mark.unit
+def test_main_gpio_rd_no_dest(capsys, reset_globals):
+    &#34;&#34;&#34;Test --gpio_rd with a named gpio channel but no dest was specified&#34;&#34;&#34;
+    sys.argv = [&#39;&#39;, &#39;--gpio-rd&#39;, &#39;0x2000&#39;]
+    Globals.getInstance().set_args(sys.argv)
+
+    channel = Channel(index=1, role=1)
+    channel.settings.modem_config = 3
+    channel.settings.psk = b&#39;\x01&#39;
+
+    iface = MagicMock(autospec=SerialInterface)
+    iface.localNode.getChannelByName.return_value = channel
+    with patch(&#39;meshtastic.serial_interface.SerialInterface&#39;, return_value=iface):
+        with pytest.raises(SystemExit) as pytest_wrapped_e:
+            main()
+        assert pytest_wrapped_e.type == SystemExit
+        assert pytest_wrapped_e.value.code == 1
+        out, err = capsys.readouterr()
+        assert re.search(r&#39;Warning: Must use a destination node ID&#39;, out)
+        assert err == &#39;&#39;</code></pre>
+</details>
+</dd>
+<dt id="meshtastic.tests.test_main.test_main_gpio_rd_no_gpio_channel"><code class="name flex">
+<span>def <span class="ident">test_main_gpio_rd_no_gpio_channel</span></span>(<span>capsys, reset_globals)</span>
+</code></dt>
+<dd>
+<div class="desc"><p>Test &ndash;gpio_rd with no named gpio channel</p></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">@pytest.mark.unit
+def test_main_gpio_rd_no_gpio_channel(capsys, reset_globals):
+    &#34;&#34;&#34;Test --gpio_rd with no named gpio channel&#34;&#34;&#34;
+    sys.argv = [&#39;&#39;, &#39;--gpio-rd&#39;, &#39;0x10&#39;]
+    Globals.getInstance().set_args(sys.argv)
+
+    iface = MagicMock(autospec=SerialInterface)
+    iface.localNode.getChannelByName.return_value = None
+    with patch(&#39;meshtastic.serial_interface.SerialInterface&#39;, return_value=iface):
+        with pytest.raises(SystemExit) as pytest_wrapped_e:
+            main()
+        assert pytest_wrapped_e.type == SystemExit
+        assert pytest_wrapped_e.value.code == 1
+        out, err = capsys.readouterr()
+        assert re.search(r&#39;Warning: No channel named&#39;, out)
         assert err == &#39;&#39;</code></pre>
 </details>
 </dd>
@@ -2118,7 +2780,7 @@ def test_main_onConnection(reset_globals, capsys):
 </details>
 </dd>
 <dt id="meshtastic.tests.test_main.test_main_onReceive_empty"><code class="name flex">
-<span>def <span class="ident">test_main_onReceive_empty</span></span>(<span>reset_globals)</span>
+<span>def <span class="ident">test_main_onReceive_empty</span></span>(<span>caplog, reset_globals)</span>
 </code></dt>
 <dd>
 <div class="desc"><p>Test onReceive</p></div>
@@ -2127,14 +2789,125 @@ def test_main_onConnection(reset_globals, capsys):
 <span>Expand source code</span>
 </summary>
 <pre><code class="python">@pytest.mark.unit
-def test_main_onReceive_empty(reset_globals):
+def test_main_onReceive_empty(caplog, reset_globals):
     &#34;&#34;&#34;Test onReceive&#34;&#34;&#34;
     sys.argv = [&#39;&#39;]
     Globals.getInstance().set_args(sys.argv)
     iface = MagicMock(autospec=SerialInterface)
     packet = {&#39;decoded&#39;: &#39;foo&#39;}
-    onReceive(packet, iface)
-    # TODO: how do we know we actually called it?</code></pre>
+    with caplog.at_level(logging.DEBUG):
+        onReceive(packet, iface)
+    assert re.search(r&#39;in onReceive&#39;, caplog.text, re.MULTILINE)</code></pre>
+</details>
+</dd>
+<dt id="meshtastic.tests.test_main.test_main_onReceive_with_reply"><code class="name flex">
+<span>def <span class="ident">test_main_onReceive_with_reply</span></span>(<span>caplog, capsys, reset_globals)</span>
+</code></dt>
+<dd>
+<div class="desc"><p>Test onReceive with a reply
+To capture: on one device run '&ndash;sendtext aaa &ndash;reply' and on another
+device run '&ndash;sendtext bbb &ndash;reply', then back to the first device and
+run '&ndash;sendtext aaa2 &ndash;reply'. You should now see a "Sending reply" message.</p></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">@pytest.mark.unit
+def test_main_onReceive_with_reply(caplog, capsys, reset_globals):
+    &#34;&#34;&#34;Test onReceive with a reply
+       To capture: on one device run &#39;--sendtext aaa --reply&#39; and on another
+       device run &#39;--sendtext bbb --reply&#39;, then back to the first device and
+       run &#39;--sendtext aaa2 --reply&#39;. You should now see a &#34;Sending reply&#34; message.
+    &#34;&#34;&#34;
+    sys.argv = [&#39;&#39;, &#39;--sendtext&#39;, &#39;hello&#39;, &#39;--reply&#39;]
+    Globals.getInstance().set_args(sys.argv)
+
+    # Note: &#39;TEXT_MESSAGE_APP&#39; value is 1
+
+    send_packet = {
+            &#39;to&#39;: 4294967295,
+            &#39;decoded&#39;: {
+                &#39;portnum&#39;: 1,
+                &#39;payload&#39;: &#34;hello&#34;
+                },
+            &#39;id&#39;: 334776977,
+            &#39;hop_limit&#39;: 3,
+            &#39;want_ack&#39;: True
+            }
+
+    reply_packet = {
+            &#39;from&#39;: 682968668,
+            &#39;to&#39;: 4294967295,
+            &#39;decoded&#39;: {
+                &#39;portnum&#39;: &#39;TEXT_MESSAGE_APP&#39;,
+                &#39;payload&#39;: b&#39;bbb&#39;,
+                &#39;text&#39;: &#39;bbb&#39;
+                },
+            &#39;id&#39;: 1709936182,
+            &#39;rxTime&#39;: 1640381999,
+            &#39;rxSnr&#39;: 6.0,
+            &#39;hopLimit&#39;: 3,
+            &#39;raw&#39;: &#39;faked&#39;,
+            &#39;fromId&#39;: &#39;!28b5465c&#39;,
+            &#39;toId&#39;: &#39;^all&#39;
+            }
+
+    iface = MagicMock(autospec=SerialInterface)
+    iface.myInfo.my_node_num = 4294967295
+
+    with patch(&#39;meshtastic.serial_interface.SerialInterface&#39;, return_value=iface) as mo:
+        with caplog.at_level(logging.DEBUG):
+            main()
+            onReceive(send_packet, iface)
+            onReceive(reply_packet, iface)
+        assert re.search(r&#39;in onReceive&#39;, caplog.text, re.MULTILINE)
+        out, err = capsys.readouterr()
+        assert re.search(r&#39;got msg &#39;, out, re.MULTILINE)
+        assert err == &#39;&#39;
+        mo.assert_called()</code></pre>
+</details>
+</dd>
+<dt id="meshtastic.tests.test_main.test_main_onReceive_with_sendtext"><code class="name flex">
+<span>def <span class="ident">test_main_onReceive_with_sendtext</span></span>(<span>caplog, reset_globals)</span>
+</code></dt>
+<dd>
+<div class="desc"><p>Test onReceive with sendtext
+The entire point of this test is to make sure the interface.close() call
+is made in onReceive().</p></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">@pytest.mark.unit
+def test_main_onReceive_with_sendtext(caplog, reset_globals):
+    &#34;&#34;&#34;Test onReceive with sendtext
+       The entire point of this test is to make sure the interface.close() call
+       is made in onReceive().
+    &#34;&#34;&#34;
+    sys.argv = [&#39;&#39;, &#39;--sendtext&#39;, &#39;hello&#39;]
+    Globals.getInstance().set_args(sys.argv)
+
+    # Note: &#39;TEXT_MESSAGE_APP&#39; value is 1
+    packet = {
+            &#39;to&#39;: 4294967295,
+            &#39;decoded&#39;: {
+                &#39;portnum&#39;: 1,
+                &#39;payload&#39;: &#34;hello&#34;
+                },
+            &#39;id&#39;: 334776977,
+            &#39;hop_limit&#39;: 3,
+            &#39;want_ack&#39;: True
+            }
+
+    iface = MagicMock(autospec=SerialInterface)
+    iface.myInfo.my_node_num = 4294967295
+
+    with patch(&#39;meshtastic.serial_interface.SerialInterface&#39;, return_value=iface) as mo:
+        with caplog.at_level(logging.DEBUG):
+            main()
+            onReceive(packet, iface)
+        assert re.search(r&#39;in onReceive&#39;, caplog.text, re.MULTILINE)
+        mo.assert_called()</code></pre>
 </details>
 </dd>
 <dt id="meshtastic.tests.test_main.test_main_pos_fields_arg_of_zero"><code class="name flex">
@@ -2363,7 +3136,7 @@ def test_main_sendtext(capsys, reset_globals):
     Globals.getInstance().set_args(sys.argv)
 
     iface = MagicMock(autospec=SerialInterface)
-    def mock_sendText(text, dest, wantAck):
+    def mock_sendText(text, dest, wantAck, channelIndex):
         print(&#39;inside mocked sendText&#39;)
     iface.sendText.side_effect = mock_sendText
 
@@ -2372,6 +3145,37 @@ def test_main_sendtext(capsys, reset_globals):
         out, err = capsys.readouterr()
         assert re.search(r&#39;Connected to radio&#39;, out, re.MULTILINE)
         assert re.search(r&#39;Sending text message&#39;, out, re.MULTILINE)
+        assert re.search(r&#39;inside mocked sendText&#39;, out, re.MULTILINE)
+        assert err == &#39;&#39;
+        mo.assert_called()</code></pre>
+</details>
+</dd>
+<dt id="meshtastic.tests.test_main.test_main_sendtext_with_channel"><code class="name flex">
+<span>def <span class="ident">test_main_sendtext_with_channel</span></span>(<span>capsys, reset_globals)</span>
+</code></dt>
+<dd>
+<div class="desc"><p>Test &ndash;sendtext</p></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">@pytest.mark.unit
+def test_main_sendtext_with_channel(capsys, reset_globals):
+    &#34;&#34;&#34;Test --sendtext&#34;&#34;&#34;
+    sys.argv = [&#39;&#39;, &#39;--sendtext&#39;, &#39;hello&#39;, &#39;--ch-index&#39;, &#39;1&#39;]
+    Globals.getInstance().set_args(sys.argv)
+
+    iface = MagicMock(autospec=SerialInterface)
+    def mock_sendText(text, dest, wantAck, channelIndex):
+        print(&#39;inside mocked sendText&#39;)
+    iface.sendText.side_effect = mock_sendText
+
+    with patch(&#39;meshtastic.serial_interface.SerialInterface&#39;, return_value=iface) as mo:
+        main()
+        out, err = capsys.readouterr()
+        assert re.search(r&#39;Connected to radio&#39;, out, re.MULTILINE)
+        assert re.search(r&#39;Sending text message&#39;, out, re.MULTILINE)
+        assert re.search(r&#39;on channelIndex:1&#39;, out, re.MULTILINE)
         assert re.search(r&#39;inside mocked sendText&#39;, out, re.MULTILINE)
         assert err == &#39;&#39;
         mo.assert_called()</code></pre>
@@ -2393,7 +3197,7 @@ def test_main_sendtext_with_dest(capsys, reset_globals):
     Globals.getInstance().set_args(sys.argv)
 
     iface = MagicMock(autospec=SerialInterface)
-    def mock_sendText(text, dest, wantAck):
+    def mock_sendText(text, dest, wantAck, channelIndex):
         print(&#39;inside mocked sendText&#39;)
     iface.sendText.side_effect = mock_sendText
 
@@ -2405,6 +3209,134 @@ def test_main_sendtext_with_dest(capsys, reset_globals):
         assert re.search(r&#39;inside mocked sendText&#39;, out, re.MULTILINE)
         assert err == &#39;&#39;
         mo.assert_called()</code></pre>
+</details>
+</dd>
+<dt id="meshtastic.tests.test_main.test_main_sendtext_with_invalid_channel"><code class="name flex">
+<span>def <span class="ident">test_main_sendtext_with_invalid_channel</span></span>(<span>capsys, reset_globals)</span>
+</code></dt>
+<dd>
+<div class="desc"><p>Test &ndash;sendtext</p></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">@pytest.mark.unit
+def test_main_sendtext_with_invalid_channel(capsys, reset_globals):
+    &#34;&#34;&#34;Test --sendtext&#34;&#34;&#34;
+    sys.argv = [&#39;&#39;, &#39;--sendtext&#39;, &#39;hello&#39;, &#39;--ch-index&#39;, &#39;-1&#39;]
+    Globals.getInstance().set_args(sys.argv)
+
+    iface = MagicMock(autospec=SerialInterface)
+    iface.getChannelByChannelIndex.return_value = None
+    with patch(&#39;meshtastic.serial_interface.SerialInterface&#39;, return_value=iface) as mo:
+        iface.getNode.return_value.getChannelByChannelIndex.return_value = None
+        with pytest.raises(SystemExit) as pytest_wrapped_e:
+            main()
+        assert pytest_wrapped_e.type == SystemExit
+        assert pytest_wrapped_e.value.code == 1
+        out, err = capsys.readouterr()
+        assert re.search(r&#39;is not a valid channel&#39;, out, re.MULTILINE)
+        assert err == &#39;&#39;
+        mo.assert_called()</code></pre>
+</details>
+</dd>
+<dt id="meshtastic.tests.test_main.test_main_sendtext_with_invalid_channel_nine"><code class="name flex">
+<span>def <span class="ident">test_main_sendtext_with_invalid_channel_nine</span></span>(<span>capsys, reset_globals)</span>
+</code></dt>
+<dd>
+<div class="desc"><p>Test &ndash;sendtext</p></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">@pytest.mark.unit
+def test_main_sendtext_with_invalid_channel_nine(capsys, reset_globals):
+    &#34;&#34;&#34;Test --sendtext&#34;&#34;&#34;
+    sys.argv = [&#39;&#39;, &#39;--sendtext&#39;, &#39;hello&#39;, &#39;--ch-index&#39;, &#39;9&#39;]
+    Globals.getInstance().set_args(sys.argv)
+
+    iface = MagicMock(autospec=SerialInterface)
+    with patch(&#39;meshtastic.serial_interface.SerialInterface&#39;, return_value=iface) as mo:
+        iface.getNode.return_value.getChannelByChannelIndex.return_value = None
+        with pytest.raises(SystemExit) as pytest_wrapped_e:
+            main()
+        assert pytest_wrapped_e.type == SystemExit
+        assert pytest_wrapped_e.value.code == 1
+        out, err = capsys.readouterr()
+        assert re.search(r&#39;is not a valid channel&#39;, out, re.MULTILINE)
+        assert err == &#39;&#39;
+        mo.assert_called()</code></pre>
+</details>
+</dd>
+<dt id="meshtastic.tests.test_main.test_main_setPref_invalid_field"><code class="name flex">
+<span>def <span class="ident">test_main_setPref_invalid_field</span></span>(<span>capsys, reset_globals)</span>
+</code></dt>
+<dd>
+<div class="desc"><p>Test setPref() with a invalid field</p></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">@pytest.mark.unit
+def test_main_setPref_invalid_field(capsys, reset_globals):
+    &#34;&#34;&#34;Test setPref() with a invalid field&#34;&#34;&#34;
+
+
+    class Field:
+        &#34;&#34;&#34;Simple class for testing.&#34;&#34;&#34;
+
+        def __init__(self, name):
+            &#34;&#34;&#34;constructor&#34;&#34;&#34;
+            self.name = name
+
+    prefs = MagicMock()
+    prefs.DESCRIPTOR.fields_by_name.get.return_value = None
+
+    # Note: This is a subset of the real fields
+    ls_secs_field = Field(&#39;ls_secs&#39;)
+    is_router = Field(&#39;is_router&#39;)
+    fixed_position = Field(&#39;fixed_position&#39;)
+
+    fields = [ ls_secs_field, is_router, fixed_position ]
+    prefs.DESCRIPTOR.fields = fields
+
+    setPref(prefs, &#39;foo&#39;, &#39;300&#39;)
+    out, err = capsys.readouterr()
+    assert re.search(r&#39;does not have an attribute called foo&#39;, out, re.MULTILINE)
+    # ensure they are sorted
+    assert re.search(r&#39;fixed_position\s+is_router\s+ls_secs&#39;, out, re.MULTILINE)
+    assert err == &#39;&#39;</code></pre>
+</details>
+</dd>
+<dt id="meshtastic.tests.test_main.test_main_setPref_valid_field"><code class="name flex">
+<span>def <span class="ident">test_main_setPref_valid_field</span></span>(<span>capsys, reset_globals)</span>
+</code></dt>
+<dd>
+<div class="desc"><p>Test setPref() with a valid field</p></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">@pytest.mark.unit
+def test_main_setPref_valid_field(capsys, reset_globals):
+    &#34;&#34;&#34;Test setPref() with a valid field&#34;&#34;&#34;
+
+    class Field:
+        &#34;&#34;&#34;Simple class for testing.&#34;&#34;&#34;
+
+        def __init__(self, name, enum_type):
+            &#34;&#34;&#34;constructor&#34;&#34;&#34;
+            self.name = name
+            self.enum_type = enum_type
+
+    ls_secs_field = Field(&#39;ls_secs&#39;, &#39;int&#39;)
+    prefs = MagicMock()
+    prefs.DESCRIPTOR.fields_by_name.get.return_value = ls_secs_field
+
+    setPref(prefs, &#39;ls_secs&#39;, &#39;300&#39;)
+    out, err = capsys.readouterr()
+    assert re.search(r&#39;Set ls_secs to 300&#39;, out, re.MULTILINE)
+    assert err == &#39;&#39;</code></pre>
 </details>
 </dd>
 <dt id="meshtastic.tests.test_main.test_main_set_ham_to_KI123"><code class="name flex">
@@ -3518,8 +4450,15 @@ and propagates this to our listener iff this was a state change.</p></div>
 <li><code><a title="meshtastic.tests.test_main.test_main_ch_longsfast_on_non_primary_channel" href="#meshtastic.tests.test_main.test_main_ch_longsfast_on_non_primary_channel">test_main_ch_longsfast_on_non_primary_channel</a></code></li>
 <li><code><a title="meshtastic.tests.test_main.test_main_ch_range_options" href="#meshtastic.tests.test_main.test_main_ch_range_options">test_main_ch_range_options</a></code></li>
 <li><code><a title="meshtastic.tests.test_main.test_main_configure" href="#meshtastic.tests.test_main.test_main_configure">test_main_configure</a></code></li>
+<li><code><a title="meshtastic.tests.test_main.test_main_export_config" href="#meshtastic.tests.test_main.test_main_export_config">test_main_export_config</a></code></li>
+<li><code><a title="meshtastic.tests.test_main.test_main_export_config_called_from_main" href="#meshtastic.tests.test_main.test_main_export_config_called_from_main">test_main_export_config_called_from_main</a></code></li>
+<li><code><a title="meshtastic.tests.test_main.test_main_getPref_invalid_field" href="#meshtastic.tests.test_main.test_main_getPref_invalid_field">test_main_getPref_invalid_field</a></code></li>
+<li><code><a title="meshtastic.tests.test_main.test_main_getPref_valid_field" href="#meshtastic.tests.test_main.test_main_getPref_valid_field">test_main_getPref_valid_field</a></code></li>
 <li><code><a title="meshtastic.tests.test_main.test_main_get_with_invalid" href="#meshtastic.tests.test_main.test_main_get_with_invalid">test_main_get_with_invalid</a></code></li>
 <li><code><a title="meshtastic.tests.test_main.test_main_get_with_valid_values" href="#meshtastic.tests.test_main.test_main_get_with_valid_values">test_main_get_with_valid_values</a></code></li>
+<li><code><a title="meshtastic.tests.test_main.test_main_gpio_rd" href="#meshtastic.tests.test_main.test_main_gpio_rd">test_main_gpio_rd</a></code></li>
+<li><code><a title="meshtastic.tests.test_main.test_main_gpio_rd_no_dest" href="#meshtastic.tests.test_main.test_main_gpio_rd_no_dest">test_main_gpio_rd_no_dest</a></code></li>
+<li><code><a title="meshtastic.tests.test_main.test_main_gpio_rd_no_gpio_channel" href="#meshtastic.tests.test_main.test_main_gpio_rd_no_gpio_channel">test_main_gpio_rd_no_gpio_channel</a></code></li>
 <li><code><a title="meshtastic.tests.test_main.test_main_info" href="#meshtastic.tests.test_main.test_main_info">test_main_info</a></code></li>
 <li><code><a title="meshtastic.tests.test_main.test_main_info_with_ble_interface" href="#meshtastic.tests.test_main.test_main_info_with_ble_interface">test_main_info_with_ble_interface</a></code></li>
 <li><code><a title="meshtastic.tests.test_main.test_main_info_with_seriallog_output_txt" href="#meshtastic.tests.test_main.test_main_info_with_seriallog_output_txt">test_main_info_with_seriallog_output_txt</a></code></li>
@@ -3533,6 +4472,8 @@ and propagates this to our listener iff this was a state change.</p></div>
 <li><code><a title="meshtastic.tests.test_main.test_main_nodes" href="#meshtastic.tests.test_main.test_main_nodes">test_main_nodes</a></code></li>
 <li><code><a title="meshtastic.tests.test_main.test_main_onConnection" href="#meshtastic.tests.test_main.test_main_onConnection">test_main_onConnection</a></code></li>
 <li><code><a title="meshtastic.tests.test_main.test_main_onReceive_empty" href="#meshtastic.tests.test_main.test_main_onReceive_empty">test_main_onReceive_empty</a></code></li>
+<li><code><a title="meshtastic.tests.test_main.test_main_onReceive_with_reply" href="#meshtastic.tests.test_main.test_main_onReceive_with_reply">test_main_onReceive_with_reply</a></code></li>
+<li><code><a title="meshtastic.tests.test_main.test_main_onReceive_with_sendtext" href="#meshtastic.tests.test_main.test_main_onReceive_with_sendtext">test_main_onReceive_with_sendtext</a></code></li>
 <li><code><a title="meshtastic.tests.test_main.test_main_pos_fields_arg_of_zero" href="#meshtastic.tests.test_main.test_main_pos_fields_arg_of_zero">test_main_pos_fields_arg_of_zero</a></code></li>
 <li><code><a title="meshtastic.tests.test_main.test_main_pos_fields_no_args" href="#meshtastic.tests.test_main.test_main_pos_fields_no_args">test_main_pos_fields_no_args</a></code></li>
 <li><code><a title="meshtastic.tests.test_main.test_main_pos_fields_valid_values" href="#meshtastic.tests.test_main.test_main_pos_fields_valid_values">test_main_pos_fields_valid_values</a></code></li>
@@ -3540,7 +4481,12 @@ and propagates this to our listener iff this was a state change.</p></div>
 <li><code><a title="meshtastic.tests.test_main.test_main_reboot" href="#meshtastic.tests.test_main.test_main_reboot">test_main_reboot</a></code></li>
 <li><code><a title="meshtastic.tests.test_main.test_main_sendping" href="#meshtastic.tests.test_main.test_main_sendping">test_main_sendping</a></code></li>
 <li><code><a title="meshtastic.tests.test_main.test_main_sendtext" href="#meshtastic.tests.test_main.test_main_sendtext">test_main_sendtext</a></code></li>
+<li><code><a title="meshtastic.tests.test_main.test_main_sendtext_with_channel" href="#meshtastic.tests.test_main.test_main_sendtext_with_channel">test_main_sendtext_with_channel</a></code></li>
 <li><code><a title="meshtastic.tests.test_main.test_main_sendtext_with_dest" href="#meshtastic.tests.test_main.test_main_sendtext_with_dest">test_main_sendtext_with_dest</a></code></li>
+<li><code><a title="meshtastic.tests.test_main.test_main_sendtext_with_invalid_channel" href="#meshtastic.tests.test_main.test_main_sendtext_with_invalid_channel">test_main_sendtext_with_invalid_channel</a></code></li>
+<li><code><a title="meshtastic.tests.test_main.test_main_sendtext_with_invalid_channel_nine" href="#meshtastic.tests.test_main.test_main_sendtext_with_invalid_channel_nine">test_main_sendtext_with_invalid_channel_nine</a></code></li>
+<li><code><a title="meshtastic.tests.test_main.test_main_setPref_invalid_field" href="#meshtastic.tests.test_main.test_main_setPref_invalid_field">test_main_setPref_invalid_field</a></code></li>
+<li><code><a title="meshtastic.tests.test_main.test_main_setPref_valid_field" href="#meshtastic.tests.test_main.test_main_setPref_valid_field">test_main_setPref_valid_field</a></code></li>
 <li><code><a title="meshtastic.tests.test_main.test_main_set_ham_to_KI123" href="#meshtastic.tests.test_main.test_main_set_ham_to_KI123">test_main_set_ham_to_KI123</a></code></li>
 <li><code><a title="meshtastic.tests.test_main.test_main_set_owner_to_bob" href="#meshtastic.tests.test_main.test_main_set_owner_to_bob">test_main_set_owner_to_bob</a></code></li>
 <li><code><a title="meshtastic.tests.test_main.test_main_set_team_invalid" href="#meshtastic.tests.test_main.test_main_set_team_invalid">test_main_set_team_invalid</a></code></li>

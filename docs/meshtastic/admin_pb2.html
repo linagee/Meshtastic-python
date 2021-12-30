@@ -40,8 +40,8 @@ _sym_db = _symbol_database.Default()
 
 
 from . import channel_pb2 as channel__pb2
-from . import mesh_pb2 as mesh__pb2
 from . import radioconfig_pb2 as radioconfig__pb2
+from . import mesh_pb2 as mesh__pb2
 
 
 DESCRIPTOR = _descriptor.FileDescriptor(
@@ -49,9 +49,9 @@ DESCRIPTOR = _descriptor.FileDescriptor(
   package=&#39;&#39;,
   syntax=&#39;proto3&#39;,
   serialized_options=b&#39;\n\023com.geeksville.meshB\013AdminProtosH\003Z!github.com/meshtastic/gomeshproto&#39;,
-  serialized_pb=b&#39;\n\x0b\x61\x64min.proto\x1a\rchannel.proto\x1a\nmesh.proto\x1a\x11radioconfig.proto\&#34;\xfb\x02\n\x0c\x41\x64minMessage\x12!\n\tset_radio\x18\x01 \x01(\x0b\x32\x0c.RadioConfigH\x00\x12\x1a\n\tset_owner\x18\x02 \x01(\x0b\x32\x05.UserH\x00\x12\x1f\n\x0bset_channel\x18\x03 \x01(\x0b\x32\x08.ChannelH\x00\x12\x1b\n\x11get_radio_request\x18\x04 \x01(\x08H\x00\x12*\n\x12get_radio_response\x18\x05 \x01(\x0b\x32\x0c.RadioConfigH\x00\x12\x1d\n\x13get_channel_request\x18\x06 \x01(\rH\x00\x12(\n\x14get_channel_response\x18\x07 \x01(\x0b\x32\x08.ChannelH\x00\x12\x1d\n\x13\x63onfirm_set_channel\x18  \x01(\x08H\x00\x12\x1b\n\x11\x63onfirm_set_radio\x18! \x01(\x08H\x00\x12\x18\n\x0e\x65xit_simulator\x18\&#34; \x01(\x08H\x00\x12\x18\n\x0ereboot_seconds\x18# \x01(\x05H\x00\x42\t\n\x07variantBG\n\x13\x63om.geeksville.meshB\x0b\x41\x64minProtosH\x03Z!github.com/meshtastic/gomeshprotob\x06proto3&#39;
+  serialized_pb=b&#39;\n\x0b\x61\x64min.proto\x1a\rchannel.proto\x1a\x11radioconfig.proto\x1a\nmesh.proto\&#34;\xbd\x03\n\x0c\x41\x64minMessage\x12!\n\tset_radio\x18\x01 \x01(\x0b\x32\x0c.RadioConfigH\x00\x12\x1a\n\tset_owner\x18\x02 \x01(\x0b\x32\x05.UserH\x00\x12\x1f\n\x0bset_channel\x18\x03 \x01(\x0b\x32\x08.ChannelH\x00\x12\x1b\n\x11get_radio_request\x18\x04 \x01(\x08H\x00\x12*\n\x12get_radio_response\x18\x05 \x01(\x0b\x32\x0c.RadioConfigH\x00\x12\x1d\n\x13get_channel_request\x18\x06 \x01(\rH\x00\x12(\n\x14get_channel_response\x18\x07 \x01(\x0b\x32\x08.ChannelH\x00\x12\x1b\n\x11get_owner_request\x18\x08 \x01(\x08H\x00\x12#\n\x12get_owner_response\x18\t \x01(\x0b\x32\x05.UserH\x00\x12\x1d\n\x13\x63onfirm_set_channel\x18  \x01(\x08H\x00\x12\x1b\n\x11\x63onfirm_set_radio\x18! \x01(\x08H\x00\x12\x18\n\x0e\x65xit_simulator\x18\&#34; \x01(\x08H\x00\x12\x18\n\x0ereboot_seconds\x18# \x01(\x05H\x00\x42\t\n\x07variantBG\n\x13\x63om.geeksville.meshB\x0b\x41\x64minProtosH\x03Z!github.com/meshtastic/gomeshprotob\x06proto3&#39;
   ,
-  dependencies=[channel__pb2.DESCRIPTOR,mesh__pb2.DESCRIPTOR,radioconfig__pb2.DESCRIPTOR,])
+  dependencies=[channel__pb2.DESCRIPTOR,radioconfig__pb2.DESCRIPTOR,mesh__pb2.DESCRIPTOR,])
 
 
 
@@ -113,28 +113,42 @@ _ADMINMESSAGE = _descriptor.Descriptor(
       is_extension=False, extension_scope=None,
       serialized_options=None, file=DESCRIPTOR),
     _descriptor.FieldDescriptor(
-      name=&#39;confirm_set_channel&#39;, full_name=&#39;AdminMessage.confirm_set_channel&#39;, index=7,
+      name=&#39;get_owner_request&#39;, full_name=&#39;AdminMessage.get_owner_request&#39;, index=7,
+      number=8, type=8, cpp_type=7, label=1,
+      has_default_value=False, default_value=False,
+      message_type=None, enum_type=None, containing_type=None,
+      is_extension=False, extension_scope=None,
+      serialized_options=None, file=DESCRIPTOR),
+    _descriptor.FieldDescriptor(
+      name=&#39;get_owner_response&#39;, full_name=&#39;AdminMessage.get_owner_response&#39;, index=8,
+      number=9, type=11, cpp_type=10, label=1,
+      has_default_value=False, default_value=None,
+      message_type=None, enum_type=None, containing_type=None,
+      is_extension=False, extension_scope=None,
+      serialized_options=None, file=DESCRIPTOR),
+    _descriptor.FieldDescriptor(
+      name=&#39;confirm_set_channel&#39;, full_name=&#39;AdminMessage.confirm_set_channel&#39;, index=9,
       number=32, type=8, cpp_type=7, label=1,
       has_default_value=False, default_value=False,
       message_type=None, enum_type=None, containing_type=None,
       is_extension=False, extension_scope=None,
       serialized_options=None, file=DESCRIPTOR),
     _descriptor.FieldDescriptor(
-      name=&#39;confirm_set_radio&#39;, full_name=&#39;AdminMessage.confirm_set_radio&#39;, index=8,
+      name=&#39;confirm_set_radio&#39;, full_name=&#39;AdminMessage.confirm_set_radio&#39;, index=10,
       number=33, type=8, cpp_type=7, label=1,
       has_default_value=False, default_value=False,
       message_type=None, enum_type=None, containing_type=None,
       is_extension=False, extension_scope=None,
       serialized_options=None, file=DESCRIPTOR),
     _descriptor.FieldDescriptor(
-      name=&#39;exit_simulator&#39;, full_name=&#39;AdminMessage.exit_simulator&#39;, index=9,
+      name=&#39;exit_simulator&#39;, full_name=&#39;AdminMessage.exit_simulator&#39;, index=11,
       number=34, type=8, cpp_type=7, label=1,
       has_default_value=False, default_value=False,
       message_type=None, enum_type=None, containing_type=None,
       is_extension=False, extension_scope=None,
       serialized_options=None, file=DESCRIPTOR),
     _descriptor.FieldDescriptor(
-      name=&#39;reboot_seconds&#39;, full_name=&#39;AdminMessage.reboot_seconds&#39;, index=10,
+      name=&#39;reboot_seconds&#39;, full_name=&#39;AdminMessage.reboot_seconds&#39;, index=12,
       number=35, type=5, cpp_type=1, label=1,
       has_default_value=False, default_value=0,
       message_type=None, enum_type=None, containing_type=None,
@@ -156,7 +170,7 @@ _ADMINMESSAGE = _descriptor.Descriptor(
       index=0, containing_type=None, fields=[]),
   ],
   serialized_start=62,
-  serialized_end=441,
+  serialized_end=507,
 )
 
 _ADMINMESSAGE.fields_by_name[&#39;set_radio&#39;].message_type = radioconfig__pb2._RADIOCONFIG
@@ -164,6 +178,7 @@ _ADMINMESSAGE.fields_by_name[&#39;set_owner&#39;].message_type = mesh__pb2._USER
 _ADMINMESSAGE.fields_by_name[&#39;set_channel&#39;].message_type = channel__pb2._CHANNEL
 _ADMINMESSAGE.fields_by_name[&#39;get_radio_response&#39;].message_type = radioconfig__pb2._RADIOCONFIG
 _ADMINMESSAGE.fields_by_name[&#39;get_channel_response&#39;].message_type = channel__pb2._CHANNEL
+_ADMINMESSAGE.fields_by_name[&#39;get_owner_response&#39;].message_type = mesh__pb2._USER
 _ADMINMESSAGE.oneofs_by_name[&#39;variant&#39;].fields.append(
   _ADMINMESSAGE.fields_by_name[&#39;set_radio&#39;])
 _ADMINMESSAGE.fields_by_name[&#39;set_radio&#39;].containing_oneof = _ADMINMESSAGE.oneofs_by_name[&#39;variant&#39;]
@@ -185,6 +200,12 @@ _ADMINMESSAGE.fields_by_name[&#39;get_channel_request&#39;].containing_oneof = _
 _ADMINMESSAGE.oneofs_by_name[&#39;variant&#39;].fields.append(
   _ADMINMESSAGE.fields_by_name[&#39;get_channel_response&#39;])
 _ADMINMESSAGE.fields_by_name[&#39;get_channel_response&#39;].containing_oneof = _ADMINMESSAGE.oneofs_by_name[&#39;variant&#39;]
+_ADMINMESSAGE.oneofs_by_name[&#39;variant&#39;].fields.append(
+  _ADMINMESSAGE.fields_by_name[&#39;get_owner_request&#39;])
+_ADMINMESSAGE.fields_by_name[&#39;get_owner_request&#39;].containing_oneof = _ADMINMESSAGE.oneofs_by_name[&#39;variant&#39;]
+_ADMINMESSAGE.oneofs_by_name[&#39;variant&#39;].fields.append(
+  _ADMINMESSAGE.fields_by_name[&#39;get_owner_response&#39;])
+_ADMINMESSAGE.fields_by_name[&#39;get_owner_response&#39;].containing_oneof = _ADMINMESSAGE.oneofs_by_name[&#39;variant&#39;]
 _ADMINMESSAGE.oneofs_by_name[&#39;variant&#39;].fields.append(
   _ADMINMESSAGE.fields_by_name[&#39;confirm_set_channel&#39;])
 _ADMINMESSAGE.fields_by_name[&#39;confirm_set_channel&#39;].containing_oneof = _ADMINMESSAGE.oneofs_by_name[&#39;variant&#39;]
@@ -258,6 +279,14 @@ shown below.</p></div>
 <div class="desc"></div>
 </dd>
 <dt id="meshtastic.admin_pb2.AdminMessage.GET_CHANNEL_RESPONSE_FIELD_NUMBER"><code class="name">var <span class="ident">GET_CHANNEL_RESPONSE_FIELD_NUMBER</span></code></dt>
+<dd>
+<div class="desc"></div>
+</dd>
+<dt id="meshtastic.admin_pb2.AdminMessage.GET_OWNER_REQUEST_FIELD_NUMBER"><code class="name">var <span class="ident">GET_OWNER_REQUEST_FIELD_NUMBER</span></code></dt>
+<dd>
+<div class="desc"></div>
+</dd>
+<dt id="meshtastic.admin_pb2.AdminMessage.GET_OWNER_RESPONSE_FIELD_NUMBER"><code class="name">var <span class="ident">GET_OWNER_RESPONSE_FIELD_NUMBER</span></code></dt>
 <dd>
 <div class="desc"></div>
 </dd>
@@ -378,6 +407,42 @@ shown below.</p></div>
 <dt id="meshtastic.admin_pb2.AdminMessage.get_channel_response"><code class="name">var <span class="ident">get_channel_response</span></code></dt>
 <dd>
 <div class="desc"><p>Getter for get_channel_response.</p></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def getter(self):
+  field_value = self._fields.get(field)
+  if field_value is None:
+    # Construct a new object to represent this field.
+    field_value = field._default_constructor(self)
+
+    # Atomically check if another thread has preempted us and, if not, swap
+    # in the new object we just created.  If someone has preempted us, we
+    # take that object and discard ours.
+    # WARNING:  We are relying on setdefault() being atomic.  This is true
+    #   in CPython but we haven&#39;t investigated others.  This warning appears
+    #   in several other locations in this file.
+    field_value = self._fields.setdefault(field, field_value)
+  return field_value</code></pre>
+</details>
+</dd>
+<dt id="meshtastic.admin_pb2.AdminMessage.get_owner_request"><code class="name">var <span class="ident">get_owner_request</span></code></dt>
+<dd>
+<div class="desc"><p>Getter for get_owner_request.</p></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def getter(self):
+  # TODO(protobuf-team): This may be broken since there may not be
+  # default_value.  Combine with has_default_value somehow.
+  return self._fields.get(field, default_value)</code></pre>
+</details>
+</dd>
+<dt id="meshtastic.admin_pb2.AdminMessage.get_owner_response"><code class="name">var <span class="ident">get_owner_response</span></code></dt>
+<dd>
+<div class="desc"><p>Getter for get_owner_response.</p></div>
 <details class="source">
 <summary>
 <span>Expand source code</span>
@@ -1007,6 +1072,8 @@ and propagates this to our listener iff this was a state change.</p></div>
 <li><code><a title="meshtastic.admin_pb2.AdminMessage.FromString" href="#meshtastic.admin_pb2.AdminMessage.FromString">FromString</a></code></li>
 <li><code><a title="meshtastic.admin_pb2.AdminMessage.GET_CHANNEL_REQUEST_FIELD_NUMBER" href="#meshtastic.admin_pb2.AdminMessage.GET_CHANNEL_REQUEST_FIELD_NUMBER">GET_CHANNEL_REQUEST_FIELD_NUMBER</a></code></li>
 <li><code><a title="meshtastic.admin_pb2.AdminMessage.GET_CHANNEL_RESPONSE_FIELD_NUMBER" href="#meshtastic.admin_pb2.AdminMessage.GET_CHANNEL_RESPONSE_FIELD_NUMBER">GET_CHANNEL_RESPONSE_FIELD_NUMBER</a></code></li>
+<li><code><a title="meshtastic.admin_pb2.AdminMessage.GET_OWNER_REQUEST_FIELD_NUMBER" href="#meshtastic.admin_pb2.AdminMessage.GET_OWNER_REQUEST_FIELD_NUMBER">GET_OWNER_REQUEST_FIELD_NUMBER</a></code></li>
+<li><code><a title="meshtastic.admin_pb2.AdminMessage.GET_OWNER_RESPONSE_FIELD_NUMBER" href="#meshtastic.admin_pb2.AdminMessage.GET_OWNER_RESPONSE_FIELD_NUMBER">GET_OWNER_RESPONSE_FIELD_NUMBER</a></code></li>
 <li><code><a title="meshtastic.admin_pb2.AdminMessage.GET_RADIO_REQUEST_FIELD_NUMBER" href="#meshtastic.admin_pb2.AdminMessage.GET_RADIO_REQUEST_FIELD_NUMBER">GET_RADIO_REQUEST_FIELD_NUMBER</a></code></li>
 <li><code><a title="meshtastic.admin_pb2.AdminMessage.GET_RADIO_RESPONSE_FIELD_NUMBER" href="#meshtastic.admin_pb2.AdminMessage.GET_RADIO_RESPONSE_FIELD_NUMBER">GET_RADIO_RESPONSE_FIELD_NUMBER</a></code></li>
 <li><code><a title="meshtastic.admin_pb2.AdminMessage.HasField" href="#meshtastic.admin_pb2.AdminMessage.HasField">HasField</a></code></li>
@@ -1029,6 +1096,8 @@ and propagates this to our listener iff this was a state change.</p></div>
 <li><code><a title="meshtastic.admin_pb2.AdminMessage.exit_simulator" href="#meshtastic.admin_pb2.AdminMessage.exit_simulator">exit_simulator</a></code></li>
 <li><code><a title="meshtastic.admin_pb2.AdminMessage.get_channel_request" href="#meshtastic.admin_pb2.AdminMessage.get_channel_request">get_channel_request</a></code></li>
 <li><code><a title="meshtastic.admin_pb2.AdminMessage.get_channel_response" href="#meshtastic.admin_pb2.AdminMessage.get_channel_response">get_channel_response</a></code></li>
+<li><code><a title="meshtastic.admin_pb2.AdminMessage.get_owner_request" href="#meshtastic.admin_pb2.AdminMessage.get_owner_request">get_owner_request</a></code></li>
+<li><code><a title="meshtastic.admin_pb2.AdminMessage.get_owner_response" href="#meshtastic.admin_pb2.AdminMessage.get_owner_response">get_owner_response</a></code></li>
 <li><code><a title="meshtastic.admin_pb2.AdminMessage.get_radio_request" href="#meshtastic.admin_pb2.AdminMessage.get_radio_request">get_radio_request</a></code></li>
 <li><code><a title="meshtastic.admin_pb2.AdminMessage.get_radio_response" href="#meshtastic.admin_pb2.AdminMessage.get_radio_response">get_radio_response</a></code></li>
 <li><code><a title="meshtastic.admin_pb2.AdminMessage.reboot_seconds" href="#meshtastic.admin_pb2.AdminMessage.reboot_seconds">reboot_seconds</a></code></li>
